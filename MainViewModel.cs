@@ -1,8 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Maui.ApplicationModel;
 using MvvmCross.Commands;
 using MvvmCross.ViewModels;
 using Plugin.BLE;
@@ -28,12 +25,43 @@ public class MainViewModel : MvxViewModel
     public BleState State
     {
         get => _state;
-        set => SetProperty(ref _state, value);
+        set
+        {
+            if (!SetProperty(ref _state, value))
+            {
+                return;
+            }
+
+            RaisePropertyChanged(nameof(ButtonText));
+        }
+    }
+
+    public string ButtonText => State switch
+    {
+        BleState.Unpaired when SelectedDevice == null => "Start Scan",
+        BleState.Scanning when SelectedDevice == null => "Stop Scan",
+        _ => "Connect"
+    };
+
+    private IDevice? _selectedDevice;
+    public IDevice? SelectedDevice
+    {
+        get => _selectedDevice;
+        set
+        {
+            if (!SetProperty(ref _selectedDevice, value))
+            {
+                return;
+            }
+
+            RaisePropertyChanged(nameof(ButtonText));
+        }
     }
     
     public MainViewModel()
     {
         _bluetoothLe = CrossBluetoothLE.Current;
+        
         _bluetoothLe.Adapter.DeviceDiscovered += OnDeviceDiscovered;
         
         ActionCommand = new MvxAsyncCommand(DoActionAsync);
@@ -97,7 +125,7 @@ public class MainViewModel : MvxViewModel
 
     private static Task<bool> ShowAlert(string title, string message, string confirm, string? cancel = null)
     {
-        var mainPage = Microsoft.Maui.Controls.Application.Current?.MainPage;
+        var mainPage = Application.Current?.MainPage;
 
         return mainPage == null
             ? Task.FromResult(false)

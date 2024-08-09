@@ -9,24 +9,21 @@
     <Grid Padding="30,0" RowSpacing="20" RowDefinitions="8*,2*">
         <ListView
             Grid.Row="0"
-            ItemsSource="{Binding DiscoveredDevices}">
+            ItemsSource="{Binding DiscoveredDevices}"
+            SelectedItem="{Binding SelectedDevice}"
+            >
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="ble:IDevice">
                     <ViewCell>
-                        <Label Text="{Binding Name}" />
+                        <Label Text="{Binding Name}" VerticalTextAlignment="Center" />
                     </ViewCell>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
-        <Button Grid.Row="1" HorizontalOptions="Fill" Command="{Binding ActionCommand}">
-            <Button.Triggers>
-                <DataTrigger TargetType="Button" Binding="{Binding State}" Value="{x:Static local:BleState.Unpaired}">
-                    <Setter Property="Text" Value="Start Scan" />
-                </DataTrigger>
-                <DataTrigger TargetType="Button" Binding="{Binding State}" Value="{x:Static local:BleState.Scanning}">
-                    <Setter Property="Text" Value="Stop Scan" />
-                </DataTrigger>
-            </Button.Triggers>
-        </Button>
+        <Button
+            Grid.Row="1"
+            HorizontalOptions="Fill"
+            Text="{Binding ButtonText}"
+            Command="{Binding ActionCommand}"/>
     </Grid>
 </ContentPage>

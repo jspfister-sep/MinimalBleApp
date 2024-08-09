@@ -1,10 +1,10 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:minimalBleApp="clr-namespace:MinimalBleApp"
+             xmlns:local="clr-namespace:MinimalBleApp"
              xmlns:ble="clr-namespace:Plugin.BLE.Abstractions.Contracts;assembly=Plugin.BLE"
              x:Class="MinimalBleApp.MainPage"
-             x:DataType="minimalBleApp:MainViewModel">
+             x:DataType="local:MainViewModel">
 
     <Grid Padding="30,0" RowSpacing="20" RowDefinitions="8*,2*">
         <ListView
@@ -18,12 +18,12 @@
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
-        <Button Grid.Row="1" HorizontalOptions="Fill" Command="{Binding ScanCommand}">
+        <Button Grid.Row="1" HorizontalOptions="Fill" Command="{Binding ActionCommand}">
             <Button.Triggers>
-                <DataTrigger TargetType="Button" Binding="{Binding IsScanning}" Value="False">
+                <DataTrigger TargetType="Button" Binding="{Binding State}" Value="{x:Static local:BleState.Unpaired}">
                     <Setter Property="Text" Value="Start Scan" />
                 </DataTrigger>
-                <DataTrigger TargetType="Button" Binding="{Binding IsScanning}" Value="True">
+                <DataTrigger TargetType="Button" Binding="{Binding State}" Value="{x:Static local:BleState.Scanning}">
                     <Setter Property="Text" Value="Stop Scan" />
                 </DataTrigger>
             </Button.Triggers>

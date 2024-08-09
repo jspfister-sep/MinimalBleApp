@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Maui.Animations;
 using Microsoft.Maui.ApplicationModel;
 using MvvmCross.Commands;
 using MvvmCross.ViewModels;
@@ -12,27 +11,32 @@ using Plugin.BLE.Abstractions.EventArgs;
 
 namespace MinimalBleApp;
 
+public enum BleState
+{
+    Unpaired,
+    Scanning,
+}
+
 public class MainViewModel : MvxViewModel
 {
     private readonly IBluetoothLE _bluetoothLe;
 
     public ObservableCollection<IDevice> DiscoveredDevices { get; } = [];
-    public ICommand ScanCommand { get; }
+    public ICommand ActionCommand { get; }
 
-    private bool _isScanning;
-    public bool IsScanning
+    private BleState _state;
+    public BleState State
     {
-        get => _isScanning;
-        set => SetProperty(ref _isScanning, value);
+        get => _state;
+        set => SetProperty(ref _state, value);
     }
-    
     
     public MainViewModel()
     {
         _bluetoothLe = CrossBluetoothLE.Current;
         _bluetoothLe.Adapter.DeviceDiscovered += OnDeviceDiscovered;
         
-        ScanCommand = new MvxAsyncCommand(ToggleScanForDevicesAsync);
+        ActionCommand = new MvxAsyncCommand(DoActionAsync);
     }
 
     private void OnDeviceDiscovered(object? sender, DeviceEventArgs args)
@@ -45,35 +49,50 @@ public class MainViewModel : MvxViewModel
         DiscoveredDevices.Add(args.Device);
     }
 
-    private async Task ToggleScanForDevicesAsync()
+    private async Task DoActionAsync()
     {
-        if (IsScanning)
+        switch (State)
         {
-            IsScanning = false;
-            await _bluetoothLe.Adapter.StopScanningForDevicesAsync();
+            case BleState.Unpaired:
+                await StartScanning();
+                break;
+                
+            case BleState.Scanning:
+                State = BleState.Unpaired;
+                await _bluetoothLe.Adapter.StopScanningForDevicesAsync();
+                break;
         }
-        else
+    }
+
+    private async Task StartScanning()
+    {
+        DiscoveredDevices.Clear();
+
+        var status = await Permissions.CheckStatusAsync<Permissions.Bluetooth>();
+
+        if (status != PermissionStatus.Granted)
         {
-            DiscoveredDevices.Clear();
-            
-            var status = await Permissions.CheckStatusAsync<Permissions.Bluetooth>();
-
-            if (status != PermissionStatus.Granted)
-            {
-                status = await Permissions.RequestAsync<Permissions.Bluetooth>();
-            }
-
-            if (status != PermissionStatus.Granted)
-            {
-                await ShowAlert("Error", "No BLE permissions!", "OK");
-                return;
-            }
-
-            IsScanning = true;
-            _bluetoothLe.Adapter
-                .StartScanningForDevicesAsync(deviceFilter: d => !string.IsNullOrEmpty(d.Name))
-                .ContinueWith(_ => { IsScanning = false; });
+            status = await Permissions.RequestAsync<Permissions.Bluetooth>();
         }
+
+        if (status != PermissionStatus.Granted)
+        {
+            await ShowAlert("Error", "No BLE permissions!", "OK");
+            return;
+        }
+
+        State = BleState.Scanning;
+        _bluetoothLe.Adapter
+            .StartScanningForDevicesAsync(deviceFilter: d => !string.IsNullOrEmpty(d.Name))
+            .ContinueWith(_ =>
+            {
+                if (State != BleState.Scanning)
+                {
+                    return;
+                }
+                
+                State = BleState.Unpaired;
+            });
     }
 
     private static Task<bool> ShowAlert(string title, string message, string confirm, string? cancel = null)

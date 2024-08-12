@@ -6,7 +6,7 @@
              x:Class="MinimalBleApp.MainPage"
              x:DataType="local:MainViewModel">
 
-    <Grid Padding="30,0" RowSpacing="20" RowDefinitions="8*,2*">
+    <Grid Padding="30,0" RowSpacing="20" RowDefinitions="8*,*,*">
         <ListView
             Grid.Row="0"
             ItemsSource="{Binding DiscoveredDevices}"
@@ -20,8 +20,12 @@
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
-        <Button
+        <Label
             Grid.Row="1"
+            VerticalTextAlignment="End"
+            Text="{Binding StatusText}" />
+        <Button
+            Grid.Row="2"
             HorizontalOptions="Fill"
             Text="{Binding ButtonText}"
             Command="{Binding ActionCommand}"/>

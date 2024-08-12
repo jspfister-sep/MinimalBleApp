@@ -1,5 +1,11 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Controls;
 using MvvmCross.Commands;
 using MvvmCross.ViewModels;
 using Plugin.BLE;
@@ -8,38 +14,52 @@ using Plugin.BLE.Abstractions.EventArgs;
 
 namespace MinimalBleApp;
 
-public enum BleState
-{
-    Unpaired,
-    Scanning,
-}
-
 public class MainViewModel : MvxViewModel
 {
+    private enum BleState
+    {
+        Idle,
+        Scanning,
+        Connecting,
+        Connected,
+    }
+
+    private BleState _state;
+    private BleState State
+    {
+        get => _state;
+        set
+        {
+            if (value == _state)
+            {
+                return;
+            }
+
+            _state = value;
+            RaisePropertyChanged(nameof(ButtonText));
+            RaisePropertyChanged(nameof(StatusText));
+        }
+    }
+
     private readonly IBluetoothLE _bluetoothLe;
 
     public ObservableCollection<IDevice> DiscoveredDevices { get; } = [];
     public ICommand ActionCommand { get; }
 
-    private BleState _state;
-    public BleState State
+    public string StatusText => State switch
     {
-        get => _state;
-        set
-        {
-            if (!SetProperty(ref _state, value))
-            {
-                return;
-            }
-
-            RaisePropertyChanged(nameof(ButtonText));
-        }
-    }
-
+        BleState.Scanning => "Scanning...",
+        BleState.Connecting => "Connecting...",
+        BleState.Connected => $"Connected to {SelectedDevice?.Name}",
+        _ => ""
+    };
+    
     public string ButtonText => State switch
     {
-        BleState.Unpaired when SelectedDevice == null => "Start Scan",
+        BleState.Idle when SelectedDevice == null => "Start Scan",
         BleState.Scanning when SelectedDevice == null => "Stop Scan",
+        BleState.Connecting => "Connecting...",
+        BleState.Connected => "Disconnect",
         _ => "Connect"
     };
 
@@ -61,15 +81,20 @@ public class MainViewModel : MvxViewModel
     public MainViewModel()
     {
         _bluetoothLe = CrossBluetoothLE.Current;
+
+        _bluetoothLe.Adapter.ScanTimeout = 30000;
         
         _bluetoothLe.Adapter.DeviceDiscovered += OnDeviceDiscovered;
+        _bluetoothLe.Adapter.DeviceConnected += OnDeviceConnected;
+        _bluetoothLe.Adapter.DeviceDisconnected += OnDeviceDisconnected;
+        _bluetoothLe.Adapter.DeviceConnectionLost += OnDeviceDisconnected;
         
         ActionCommand = new MvxAsyncCommand(DoActionAsync);
     }
 
     private void OnDeviceDiscovered(object? sender, DeviceEventArgs args)
     {
-        if (DiscoveredDevices.Any(d => d.Id == args.Device.Id))
+        if (State != BleState.Scanning || DiscoveredDevices.Any(d => d.Id == args.Device.Id))
         {
             return;
         }
@@ -77,17 +102,76 @@ public class MainViewModel : MvxViewModel
         DiscoveredDevices.Add(args.Device);
     }
 
+    private async void OnDeviceConnected(object? sender, DeviceEventArgs args)
+    {
+        State = BleState.Connected;
+
+        try
+        {
+            foreach (var service in await SelectedDevice!.GetServicesAsync())
+            {
+                foreach (var characteristic in await service.GetCharacteristicsAsync())
+                {
+                    if (!characteristic.CanRead)
+                    {
+                        continue;
+                    }
+
+                    var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    var result = await characteristic.ReadAsync(tokenSource.Token);
+
+                    if (result.resultCode != 0)
+                    {
+                        await ShowAlert("Error", "Unable to read from paired device");
+                    }
+                    else
+                    {
+                        await ShowAlert("Success", $"Read {result.data.Length} bytes from \"{characteristic.Name}\" characteristic");
+                    }
+                    
+                    return;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            await ShowAlert("Error", "Exception while reading from paired device");
+        }
+    }
+
+    private async void OnDeviceDisconnected(object? sender, DeviceEventArgs e)
+    {
+        if (State != BleState.Connected || SelectedDevice == null)
+        {
+            return;
+        }
+
+        State = BleState.Connecting;
+        await Connect();
+    }
+
     private async Task DoActionAsync()
     {
         switch (State)
         {
-            case BleState.Unpaired:
+            case BleState.Idle when SelectedDevice == null:
                 await StartScanning();
                 break;
                 
-            case BleState.Scanning:
-                State = BleState.Unpaired;
+            case BleState.Scanning when SelectedDevice == null:
+                State = BleState.Idle;
                 await _bluetoothLe.Adapter.StopScanningForDevicesAsync();
+                break;
+            
+            case BleState.Idle when SelectedDevice != null:
+            case BleState.Scanning when SelectedDevice != null:
+                await Connect();
+                break;
+            
+            case BleState.Connected:
+                State = BleState.Idle;
+                await _bluetoothLe.Adapter.DisconnectDeviceAsync(SelectedDevice);
+                SelectedDevice = null;
                 break;
         }
     }
@@ -105,7 +189,7 @@ public class MainViewModel : MvxViewModel
 
         if (status != PermissionStatus.Granted)
         {
-            await ShowAlert("Error", "No BLE permissions!", "OK");
+            await ShowAlert("Error", "No BLE permissions!");
             return;
         }
 
@@ -119,16 +203,29 @@ public class MainViewModel : MvxViewModel
                     return;
                 }
                 
-                State = BleState.Unpaired;
+                State = BleState.Idle;
             });
     }
 
-    private static Task<bool> ShowAlert(string title, string message, string confirm, string? cancel = null)
+    private async Task Connect()
+    {
+        State = BleState.Connecting;
+        DiscoveredDevices.Clear();
+        
+        if (SelectedDevice == null)
+        {
+            return;
+        }
+        
+        SelectedDevice = await _bluetoothLe.Adapter.ConnectToKnownDeviceAsync(SelectedDevice.Id);
+    }
+
+    private static Task ShowAlert(string title, string message) => MainThread.InvokeOnMainThreadAsync(() =>
     {
         var mainPage = Application.Current?.MainPage;
 
         return mainPage == null
-            ? Task.FromResult(false)
-            : mainPage.DisplayAlert(title, message, confirm, cancel);
-    }
+            ? Task.CompletedTask
+            : mainPage.DisplayAlert(title, message, "OK");
+    });
 }

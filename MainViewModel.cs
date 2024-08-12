@@ -42,6 +42,7 @@ public class MainViewModel : MvxViewModel
     }
 
     private readonly IBluetoothLE _bluetoothLe;
+    private IDevice? _pairedDevice;
 
     public ObservableCollection<IDevice> DiscoveredDevices { get; } = [];
     public ICommand ActionCommand { get; }
@@ -50,7 +51,7 @@ public class MainViewModel : MvxViewModel
     {
         BleState.Scanning => "Scanning...",
         BleState.Connecting => "Connecting...",
-        BleState.Connected => $"Connected to {SelectedDevice?.Name}",
+        BleState.Connected => "Connected",
         _ => ""
     };
     
@@ -121,7 +122,7 @@ public class MainViewModel : MvxViewModel
 
         try
         {
-            foreach (var service in await SelectedDevice!.GetServicesAsync())
+            foreach (var service in await args.Device.GetServicesAsync())
             {
                 foreach (var characteristic in await service.GetCharacteristicsAsync())
                 {
@@ -146,7 +147,7 @@ public class MainViewModel : MvxViewModel
                 }
             }
         }
-        catch (Exception)
+        catch (Exception e)
         {
             await ShowAlert("Error", "Exception while reading from paired device");
         }
@@ -154,7 +155,7 @@ public class MainViewModel : MvxViewModel
 
     private async void OnDeviceDisconnected(object? sender, DeviceEventArgs e)
     {
-        if (State != BleState.Connected || SelectedDevice == null)
+        if (State != BleState.Connected || _pairedDevice == null)
         {
             return;
         }
@@ -178,13 +179,15 @@ public class MainViewModel : MvxViewModel
             
             case BleState.Idle when SelectedDevice != null:
             case BleState.Scanning when SelectedDevice != null:
+                _pairedDevice = SelectedDevice;
                 await Connect();
                 break;
             
             case BleState.Connected:
                 State = BleState.Idle;
-                await _bluetoothLe.Adapter.DisconnectDeviceAsync(SelectedDevice);
+                await _bluetoothLe.Adapter.DisconnectDeviceAsync(_pairedDevice);
                 SelectedDevice = null;
+                _pairedDevice = null;
                 break;
         }
     }
@@ -225,12 +228,12 @@ public class MainViewModel : MvxViewModel
         State = BleState.Connecting;
         DiscoveredDevices.Clear();
         
-        if (SelectedDevice == null)
+        if (_pairedDevice == null)
         {
             return;
         }
         
-        SelectedDevice = await _bluetoothLe.Adapter.ConnectToKnownDeviceAsync(SelectedDevice.Id);
+        await _bluetoothLe.Adapter.ConnectToKnownDeviceAsync(_pairedDevice.Id);
     }
 
     private static Task ShowAlert(string title, string message) => MainThread.InvokeOnMainThreadAsync(() =>

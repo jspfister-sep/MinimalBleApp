@@ -83,13 +83,26 @@ public class MainViewModel : MvxViewModel
         _bluetoothLe = CrossBluetoothLE.Current;
 
         _bluetoothLe.Adapter.ScanTimeout = 30000;
-        
+
+        _bluetoothLe.StateChanged += OnBleStateChanged;
         _bluetoothLe.Adapter.DeviceDiscovered += OnDeviceDiscovered;
         _bluetoothLe.Adapter.DeviceConnected += OnDeviceConnected;
         _bluetoothLe.Adapter.DeviceDisconnected += OnDeviceDisconnected;
         _bluetoothLe.Adapter.DeviceConnectionLost += OnDeviceDisconnected;
         
         ActionCommand = new MvxAsyncCommand(DoActionAsync);
+    }
+
+    private async void OnBleStateChanged(object? sender, BluetoothStateChangedArgs args)
+    {
+        if (args.OldState == BluetoothState.On && args.NewState != BluetoothState.On)
+        {
+            State = BleState.Connecting;
+        }
+        else if (args.OldState != BluetoothState.On && args.NewState == BluetoothState.On)
+        {
+            await Connect();
+        }
     }
 
     private void OnDeviceDiscovered(object? sender, DeviceEventArgs args)
